@@ -1,0 +1,34 @@
+# 编译产物
+*.obj
+*.iobj
+*.pch
+*.ipdb
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# 输出目录
+bin/
+obj/
+
+# 运行时日志
+upd_runtime_log.txt
+*.log
+
+# Visual Studio
+.vs/
+.vscode/
+*.vcxproj.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.opendb
+*.cache
+*.tmp
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

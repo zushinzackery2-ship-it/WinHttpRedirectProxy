@@ -17,7 +17,17 @@ namespace WinHttpRedirectController
 {
     struct AgentSession
     {
+        ~AgentSession()
+        {
+            if (activityEvent != nullptr)
+            {
+                CloseHandle(activityEvent);
+                activityEvent = nullptr;
+            }
+        }
+
         HANDLE pipeHandle = INVALID_HANDLE_VALUE;
+        HANDLE activityEvent = nullptr;
         DWORD pid = 0;
         std::wstring processPath;
         std::atomic<bool> connected = true;
@@ -30,7 +40,17 @@ namespace WinHttpRedirectController
 
     struct ControllerState
     {
+        ~ControllerState()
+        {
+            if (stopEvent != nullptr)
+            {
+                CloseHandle(stopEvent);
+                stopEvent = nullptr;
+            }
+        }
+
         std::atomic<bool> stopRequested = false;
+        HANDLE stopEvent = nullptr;
         std::mutex sessionsMutex;
         std::vector<std::shared_ptr<AgentSession>> sessions;
         std::mutex logMutex;

@@ -8,8 +8,20 @@ namespace WinHttpRedirectProxy
     namespace
     {
         std::atomic<bool> gMemoryRuntimeStopRequested = false;
+        HANDLE gMemoryRuntimeStopEvent = nullptr;
         HANDLE gMemoryRuntimeThread = nullptr;
         PVOID gMemoryAccessVehHandle = nullptr;
+
+        bool WaitForMemoryRuntimeStop(DWORD timeoutMs)
+        {
+            if (gMemoryRuntimeStopEvent == nullptr)
+            {
+                return gMemoryRuntimeStopRequested.load();
+            }
+
+            const DWORD waitResult = WaitForSingleObject(gMemoryRuntimeStopEvent, timeoutMs);
+            return waitResult == WAIT_OBJECT_0 || gMemoryRuntimeStopRequested.load();
+        }
     }
 
     namespace MemoryRuntime
@@ -31,7 +43,10 @@ namespace WinHttpRedirectProxy
                 if (pipeHandle == INVALID_HANDLE_VALUE)
                 {
                     AppendRuntimeLog("memory-ipc failed to create pipe instance");
-                    Sleep(1000);
+                    if (WaitForMemoryRuntimeStop(1000))
+                    {
+                        break;
+                    }
                     continue;
                 }
 
@@ -39,9 +54,9 @@ namespace WinHttpRedirectProxy
                 {
                     AppendRuntimeLog("memory-ipc wait client failed error = " + std::to_string(GetLastError()));
                     WinHttpRedirectMemoryIpc::ClosePipe(pipeHandle);
-                    if (!gMemoryRuntimeStopRequested.load())
+                    if (!gMemoryRuntimeStopRequested.load() && WaitForMemoryRuntimeStop(100))
                     {
-                        Sleep(100);
+                        break;
                     }
                     continue;
                 }
@@ -70,17 +85,36 @@ namespace WinHttpRedirectProxy
             return;
         }
 
+        if (gMemoryRuntimeStopEvent == nullptr)
+        {
+            gMemoryRuntimeStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            if (gMemoryRuntimeStopEvent == nullptr)
+            {
+                AppendRuntimeLog("CreateEventW failed for memory IPC stop event, error = " + std::to_string(GetLastError()));
+                return;
+            }
+        }
+        else
+        {
+            ResetEvent(gMemoryRuntimeStopEvent);
+        }
+
         gMemoryRuntimeStopRequested = false;
         gMemoryRuntimeThread = CreateThread(nullptr, 0, &MemoryRuntime::MemoryIpcThreadProc, nullptr, 0, nullptr);
         if (gMemoryRuntimeThread == nullptr)
         {
             AppendRuntimeLog("CreateThread failed for memory IPC, error = " + std::to_string(GetLastError()));
+            SetEvent(gMemoryRuntimeStopEvent);
         }
     }
 
     void StopMemoryIpcRuntime()
     {
         gMemoryRuntimeStopRequested = true;
+        if (gMemoryRuntimeStopEvent != nullptr)
+        {
+            SetEvent(gMemoryRuntimeStopEvent);
+        }
         if (gMemoryRuntimeThread != nullptr)
         {
             CloseHandle(gMemoryRuntimeThread);

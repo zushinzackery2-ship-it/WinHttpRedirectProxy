@@ -237,6 +237,30 @@ namespace WinHttpRedirectProxy::MemoryRuntime
                 continue;
             }
 
+            if (header->kind == static_cast<std::uint32_t>(WinHttpRedirectMemoryIpc::MessageKind::SharedMemoryConnectRequest))
+            {
+                if (buffer.size() < sizeof(WinHttpRedirectMemoryIpc::MessageHeader)
+                    + sizeof(WinHttpRedirectMemoryIpc::SharedMemoryConnectRequestPayload))
+                {
+                    AppendRuntimeLog(
+                        "memory-ipc bad shared-memory connect payload requests=" + std::to_string(requestCount)
+                        + " size=" + std::to_string(buffer.size()));
+                    WinHttpRedirectMemoryIpc::SharedMemoryConnectReplyPayload badReply = {};
+                    badReply.status = static_cast<std::uint32_t>(WinHttpRedirectMemoryIpc::OperationStatus::BadMessage);
+                    badReply.win32Error = ERROR_INVALID_DATA;
+                    WinHttpRedirectMemoryIpc::SendSharedMemoryConnectReply(
+                        pipeHandle,
+                        GetCurrentProcessId(),
+                        badReply);
+                    return;
+                }
+
+                const auto* request = reinterpret_cast<const WinHttpRedirectMemoryIpc::SharedMemoryConnectRequestPayload*>(
+                    buffer.data() + sizeof(WinHttpRedirectMemoryIpc::MessageHeader));
+                ProcessSharedMemoryConnectRequest(pipeHandle, *request);
+                return;
+            }
+
             AppendRuntimeLog(
                 "memory-ipc unknown message kind requests=" + std::to_string(requestCount)
                 + " kind=" + std::to_string(header->kind));

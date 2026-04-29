@@ -77,6 +77,9 @@ namespace WinHttpRedirectProxy::MemoryRuntime
         const WinHttpRedirectMemoryIpc::MemoryWriteRequestPayload& request,
         WinHttpRedirectMemoryIpc::MemoryReplyPayload& reply);
     void SendBadReply(HANDLE pipeHandle, WinHttpRedirectMemoryIpc::MessageKind replyKind);
+    void ProcessSharedMemoryConnectRequest(
+        HANDLE pipeHandle,
+        const WinHttpRedirectMemoryIpc::SharedMemoryConnectRequestPayload& request);
     void ProcessMemoryPipeClient(HANDLE pipeHandle);
     DWORD WINAPI MemoryIpcThreadProc(void*);
 }

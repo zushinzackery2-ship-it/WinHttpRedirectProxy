@@ -39,10 +39,31 @@ cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE ^
 if errorlevel 1 exit /b 1
 
 cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE ^
+    /Fo"%OBJ%\winhttp_memory_shared.obj" ^
+    /Fp"%PCH%" ^
+    /Yu"pch.h" ^
+    /c "%PROJECT_ROOT%winhttp_memory_shared.cpp"
+if errorlevel 1 exit /b 1
+
+cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE ^
     /Fo"%OBJ%\winhttp_memory_server.obj" ^
     /Fp"%PCH%" ^
     /Yu"pch.h" ^
     /c "%PROJECT_ROOT%winhttp_memory_server.cpp"
+if errorlevel 1 exit /b 1
+
+cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE ^
+    /Fo"%OBJ%\winhttp_controller_pipe_discovery.obj" ^
+    /Fp"%PCH%" ^
+    /Yu"pch.h" ^
+    /c "%PROJECT_ROOT%winhttp_controller_pipe_discovery.cpp"
+if errorlevel 1 exit /b 1
+
+cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE ^
+    /Fo"%OBJ%\winhttp_controller_view_model.obj" ^
+    /Fp"%PCH%" ^
+    /Yu"pch.h" ^
+    /c "%PROJECT_ROOT%winhttp_controller_view_model.cpp"
 if errorlevel 1 exit /b 1
 
 cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE ^
@@ -80,13 +101,23 @@ cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE ^
     /c "%PROJECT_ROOT%winhttp_memory_client.cpp"
 if errorlevel 1 exit /b 1
 
-link /nologo /SUBSYSTEM:WINDOWS /MACHINE:X64 /OUT:"%BIN%\winhttp_controller.exe" "%OBJ%\pch.obj" "%OBJ%\winhttp_controller_state.obj" "%OBJ%\winhttp_controller_window.obj" "%OBJ%\winhttp_controller_gui.obj" "%OBJ%\winhttp_controller.obj" Comctl32.lib Comdlg32.lib Advapi32.lib User32.lib Gdi32.lib UxTheme.lib
+cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE ^
+    /Fo"%OBJ%\winhttp_cli_controller.obj" ^
+    /Fp"%PCH%" ^
+    /Yu"pch.h" ^
+    /c "%PROJECT_ROOT%winhttp_cli_controller.cpp"
+if errorlevel 1 exit /b 1
+
+link /nologo /SUBSYSTEM:WINDOWS /MACHINE:X64 /OUT:"%BIN%\winhttp_controller.exe" "%OBJ%\pch.obj" "%OBJ%\winhttp_controller_pipe_discovery.obj" "%OBJ%\winhttp_controller_view_model.obj" "%OBJ%\winhttp_controller_state.obj" "%OBJ%\winhttp_controller_window.obj" "%OBJ%\winhttp_controller_gui.obj" "%OBJ%\winhttp_controller.obj" Comctl32.lib Comdlg32.lib Advapi32.lib User32.lib Gdi32.lib UxTheme.lib
 if errorlevel 1 exit /b 1
 
 link /nologo /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:"%BIN%\winhttp_memory_client.exe" "%OBJ%\pch.obj" "%OBJ%\winhttp_memory_client.obj"
 if errorlevel 1 exit /b 1
 
-link /nologo /DLL /IGNORE:4222 /MACHINE:X64 /OUT:"%BIN%\winhttp.dll" "%OBJ%\pch.obj" "%OBJ%\dllmain.obj" "%OBJ%\winhttp_memory_access_core.obj" "%OBJ%\winhttp_memory_access_requests.obj" "%OBJ%\winhttp_memory_server.obj" Advapi32.lib
+link /nologo /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:"%BIN%\winhttp_cli_controller.exe" "%OBJ%\pch.obj" "%OBJ%\winhttp_cli_controller.obj" Advapi32.lib
+if errorlevel 1 exit /b 1
+
+link /nologo /DLL /IGNORE:4222 /MACHINE:X64 /OUT:"%BIN%\winhttp.dll" "%OBJ%\pch.obj" "%OBJ%\dllmain.obj" "%OBJ%\winhttp_memory_access_core.obj" "%OBJ%\winhttp_memory_access_requests.obj" "%OBJ%\winhttp_memory_shared.obj" "%OBJ%\winhttp_memory_server.obj" Advapi32.lib
 if errorlevel 1 exit /b 1
 
 copy /Y "%SYSTEM_WINHTTP%" "%BIN%\winhttp_original.dll"
@@ -96,4 +127,5 @@ echo Output directory: "%BIN%"
 echo Built: "%BIN%\winhttp.dll"
 echo Built: "%BIN%\winhttp_original.dll"
 echo Built: "%BIN%\winhttp_controller.exe"
+echo Built: "%BIN%\winhttp_cli_controller.exe"
 echo Built: "%BIN%\winhttp_memory_client.exe"

@@ -12,6 +12,11 @@ namespace WinHttpRedirectController
         InitCommonControlsEx(&initCommonControls);
 
         ControllerWindowState state = {};
+        state.controllerState->stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (state.controllerState->stopEvent == nullptr)
+        {
+            return 4;
+        }
 
         WNDCLASSEXW windowClass = {};
         windowClass.cbSize = sizeof(windowClass);

@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-#include "winhttp_controller_state.hpp"
+#include "winhttp_controller_view_model.hpp"
 
 namespace WinHttpRedirectController
 {
@@ -31,8 +31,8 @@ namespace WinHttpRedirectController
         HFONT uiFont = nullptr;
         HFONT titleFont = nullptr;
         HANDLE acceptThread = nullptr;
-        std::vector<std::shared_ptr<AgentSession>> visibleSessions;
-        std::uint64_t renderedSessionsRevision = 0;
+        std::vector<ControllerDisplayRow> visibleRows;
+        std::wstring renderedEndpointSignature;
         std::uint64_t renderedLogRevision = 0;
     };
 

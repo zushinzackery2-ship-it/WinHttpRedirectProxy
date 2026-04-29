@@ -77,9 +77,12 @@ remove.bat "D:\Games\TargetGame"
 GUI 中可以：
 
 - 查看当前已连接到控制器的进程
+- 查看当前已存在的 `WinHttpRedirectProxyMemory-<pid>` 内存 IPC 管道；如果 control 会话暂未连上，列表会显示 `Memory IPC only`
 - 选择目标进程
 - 浏览并选择要加载的 DLL
 - 向选中进程下发 `LoadLibraryW` 请求
+
+`Load To Selected` 只会对带有 `Control` 通道的行启用；仅有 `Memory IPC only` 的行表示目标内存 IPC 在线，但 control 管道当前未连接到该 GUI 实例。
 
 当前 GUI 的 `Load To Selected` 采用异步排队模型：按钮点击后会先把请求加入目标会话队列，再由对应会话线程独占 Named Pipe 发送请求，因此不会再因为同一管道句柄上的并发阻塞 I/O 导致界面卡死。
 

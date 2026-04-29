@@ -33,6 +33,52 @@ namespace WinHttpRedirectController
 
             return WinHttpRedirectProxyIpc::ReadMessage(pipeHandle, buffer);
         }
+
+        bool WaitForControllerStop(const std::shared_ptr<ControllerState>& state, DWORD timeoutMs)
+        {
+            if (state == nullptr)
+            {
+                return true;
+            }
+
+            if (state->stopEvent == nullptr)
+            {
+                return state->stopRequested.load();
+            }
+
+            const DWORD waitResult = WaitForSingleObject(state->stopEvent, timeoutMs);
+            return waitResult == WAIT_OBJECT_0 || state->stopRequested.load();
+        }
+
+        bool WaitForSessionActivityOrStop(
+            const std::shared_ptr<ControllerState>& state,
+            const std::shared_ptr<AgentSession>& session,
+            DWORD timeoutMs)
+        {
+            if (state == nullptr || session == nullptr)
+            {
+                return true;
+            }
+
+            if (state->stopEvent != nullptr && session->activityEvent != nullptr)
+            {
+                HANDLE handles[] = { state->stopEvent, session->activityEvent };
+                const DWORD waitResult = WaitForMultipleObjects(2, handles, FALSE, timeoutMs);
+                return waitResult == WAIT_OBJECT_0 || state->stopRequested.load() || !session->connected.load();
+            }
+
+            if (state->stopEvent != nullptr)
+            {
+                return WaitForControllerStop(state, timeoutMs) || !session->connected.load();
+            }
+
+            if (session->activityEvent != nullptr)
+            {
+                WaitForSingleObject(session->activityEvent, timeoutMs);
+            }
+
+            return state->stopRequested.load() || !session->connected.load();
+        }
     }
 
     std::wstring WidenText(const char* text)
@@ -182,8 +228,15 @@ namespace WinHttpRedirectController
             return false;
         }
 
-        std::lock_guard<std::mutex> lock(session->pendingLoadMutex);
-        session->pendingLoadDllPaths.push_back(dllPath);
+        {
+            std::lock_guard<std::mutex> lock(session->pendingLoadMutex);
+            session->pendingLoadDllPaths.push_back(dllPath);
+        }
+
+        if (session->activityEvent != nullptr)
+        {
+            SetEvent(session->activityEvent);
+        }
         return true;
     }
 
@@ -313,7 +366,10 @@ namespace WinHttpRedirectController
                 continue;
             }
 
-            Sleep(15);
+            if (WaitForSessionActivityOrStop(state, context->session, 15))
+            {
+                break;
+            }
         }
 
         context->session->connected = false;
@@ -339,22 +395,33 @@ namespace WinHttpRedirectController
             if (pipeHandle == INVALID_HANDLE_VALUE)
             {
                 AppendLogLine(*state, L"failed to create named pipe instance");
-                Sleep(1000);
+                if (WaitForControllerStop(state, 1000))
+                {
+                    break;
+                }
                 continue;
             }
 
             if (!WinHttpRedirectProxyIpc::WaitForPipeClient(pipeHandle))
             {
                 WinHttpRedirectProxyIpc::ClosePipe(pipeHandle);
-                if (!state->stopRequested.load())
+                if (!state->stopRequested.load() && WaitForControllerStop(state, 100))
                 {
-                    Sleep(100);
+                    break;
                 }
                 continue;
             }
 
             auto session = std::make_shared<AgentSession>();
             session->pipeHandle = pipeHandle;
+            session->activityEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+            if (session->activityEvent == nullptr)
+            {
+                session->connected = false;
+                WinHttpRedirectProxyIpc::ClosePipe(session->pipeHandle);
+                AppendLogLine(*state, L"failed to create session activity event");
+                continue;
+            }
             {
                 std::lock_guard<std::mutex> lock(state->sessionsMutex);
                 state->sessions.push_back(session);

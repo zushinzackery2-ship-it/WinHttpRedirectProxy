@@ -67,7 +67,8 @@ namespace WinHttpRedirectController
         void UpdateStatusText(ControllerWindowState& state)
         {
             auto status = std::wstring(L"Pipe: ") + WINHTTP_REDIRECT_PROXY_PIPE_NAME;
-            status += L" | Connected: " + std::to_wstring(state.visibleSessions.size());
+            status += L" | Control: " + std::to_wstring(CountControlRows(state.visibleRows));
+            status += L" | Memory IPC: " + std::to_wstring(CountMemoryIpcRows(state.visibleRows));
 
             SetWindowTextW(state.statusLabel, status.c_str());
         }
@@ -77,7 +78,8 @@ namespace WinHttpRedirectController
             const auto selection = ListView_GetNextItem(state.sessionListView, -1, LVNI_SELECTED);
             const auto pathLength = GetWindowTextLengthW(state.dllPathEdit);
             const bool enabled = selection != -1
-                && static_cast<std::size_t>(selection) < state.visibleSessions.size()
+                && static_cast<std::size_t>(selection) < state.visibleRows.size()
+                && state.visibleRows[static_cast<std::size_t>(selection)].controlSession != nullptr
                 && pathLength > 0;
             EnableWindow(state.loadButton, enabled ? TRUE : FALSE);
             UpdateStatusText(state);
@@ -130,7 +132,8 @@ namespace WinHttpRedirectController
             MoveWindow(state.statusLabel, margin, height - margin - statusHeight, contentWidth, statusHeight, TRUE);
 
             ListView_SetColumnWidth(state.sessionListView, 0, 110);
-            ListView_SetColumnWidth(state.sessionListView, 1, std::max(200, contentWidth - 130));
+            ListView_SetColumnWidth(state.sessionListView, 2, 190);
+            ListView_SetColumnWidth(state.sessionListView, 1, std::max(220, contentWidth - 320));
         }
 
         bool CreateMainControls(ControllerWindowState& state)
@@ -225,6 +228,10 @@ namespace WinHttpRedirectController
             column.iSubItem = 1;
             column.pszText = const_cast<wchar_t*>(L"Process");
             ListView_InsertColumn(state.sessionListView, 1, &column);
+            column.cx = 190;
+            column.iSubItem = 2;
+            column.pszText = const_cast<wchar_t*>(L"Channel");
+            ListView_InsertColumn(state.sessionListView, 2, &column);
 
             UpdateWindowCaption(state);
             LayoutControls(state);
@@ -235,43 +242,51 @@ namespace WinHttpRedirectController
         void RefreshSessionListView(ControllerWindowState& state)
         {
             const auto revision = state.controllerState->sessionsRevision.load();
-            if (revision == state.renderedSessionsRevision)
+            auto rows = BuildControllerDisplayRows(*state.controllerState);
+            const auto signature = BuildControllerDisplaySignature(revision, rows);
+            if (signature == state.renderedEndpointSignature)
             {
                 return;
             }
 
             DWORD selectedPid = 0;
-            std::wstring selectedProcessPath;
             const auto selection = ListView_GetNextItem(state.sessionListView, -1, LVNI_SELECTED);
-            if (selection != -1 && static_cast<std::size_t>(selection) < state.visibleSessions.size())
+            if (selection != -1 && static_cast<std::size_t>(selection) < state.visibleRows.size())
             {
-                GetSessionIdentity(state.visibleSessions[selection], selectedPid, selectedProcessPath);
+                selectedPid = state.visibleRows[static_cast<std::size_t>(selection)].pid;
             }
 
-            state.visibleSessions = SnapshotSessions(*state.controllerState);
+            state.visibleRows = std::move(rows);
             ListView_DeleteAllItems(state.sessionListView);
 
             int selectedIndex = -1;
-            for (std::size_t index = 0; index < state.visibleSessions.size(); ++index)
+            for (std::size_t index = 0; index < state.visibleRows.size(); ++index)
             {
-                DWORD pid = 0;
-                std::wstring processPath;
-                GetSessionIdentity(state.visibleSessions[index], pid, processPath);
+                const auto& row = state.visibleRows[index];
 
                 LVITEMW item = {};
                 item.mask = LVIF_TEXT;
                 item.iItem = static_cast<int>(index);
-                auto pidText = std::to_wstring(pid);
+                auto pidText = std::to_wstring(row.pid);
                 item.pszText = pidText.data();
                 ListView_InsertItem(state.sessionListView, &item);
-                ListView_SetItemText(state.sessionListView, static_cast<int>(index), 1, processPath.data());
-                if (selectedPid != 0 && pid == selectedPid)
+                ListView_SetItemText(
+                    state.sessionListView,
+                    static_cast<int>(index),
+                    1,
+                    const_cast<wchar_t*>(row.processPath.c_str()));
+                ListView_SetItemText(
+                    state.sessionListView,
+                    static_cast<int>(index),
+                    2,
+                    const_cast<wchar_t*>(row.channelText.c_str()));
+                if (selectedPid != 0 && row.pid == selectedPid)
                 {
                     selectedIndex = static_cast<int>(index);
                 }
             }
 
-            if (selectedIndex == -1 && !state.visibleSessions.empty())
+            if (selectedIndex == -1 && !state.visibleRows.empty())
             {
                 selectedIndex = 0;
             }
@@ -285,7 +300,7 @@ namespace WinHttpRedirectController
                 ListView_EnsureVisible(state.sessionListView, selectedIndex, FALSE);
             }
 
-            state.renderedSessionsRevision = revision;
+            state.renderedEndpointSignature = signature;
             UpdateLoadButtonState(state);
         }
 
@@ -307,12 +322,12 @@ namespace WinHttpRedirectController
         std::shared_ptr<AgentSession> GetSelectedSession(ControllerWindowState& state)
         {
             const auto selection = ListView_GetNextItem(state.sessionListView, -1, LVNI_SELECTED);
-            if (selection == -1 || static_cast<std::size_t>(selection) >= state.visibleSessions.size())
+            if (selection == -1 || static_cast<std::size_t>(selection) >= state.visibleRows.size())
             {
                 return nullptr;
             }
 
-            return state.visibleSessions[selection];
+            return state.visibleRows[static_cast<std::size_t>(selection)].controlSession;
         }
 
         void BeginAsyncLoadRequest(ControllerWindowState& state)
@@ -357,6 +372,10 @@ namespace WinHttpRedirectController
     void CleanupControllerWindowState(ControllerWindowState& state)
     {
         state.controllerState->stopRequested = true;
+        if (state.controllerState->stopEvent != nullptr)
+        {
+            SetEvent(state.controllerState->stopEvent);
+        }
         if (state.acceptThread != nullptr)
         {
             CloseHandle(state.acceptThread);
@@ -450,6 +469,10 @@ namespace WinHttpRedirectController
         case WM_DESTROY:
             KillTimer(window, kRefreshTimerId);
             state->controllerState->stopRequested = true;
+            if (state->controllerState->stopEvent != nullptr)
+            {
+                SetEvent(state->controllerState->stopEvent);
+            }
             PostQuitMessage(0);
             return 0;
         }

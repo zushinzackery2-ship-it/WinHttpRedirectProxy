@@ -25,6 +25,7 @@ namespace WinHttpRedirectProxy
 {
     inline std::filesystem::path gRuntimeLogPath;
     inline std::atomic<bool> gStopRequested = false;
+    inline HANDLE gControllerStopEvent = nullptr;
     inline std::mutex gRuntimeLogMutex;
 
     inline std::string Narrow(const std::wstring& text)
@@ -100,7 +101,9 @@ namespace WinHttpRedirectProxy
             return false;
         }
 
-        return EqualsInsensitive(std::filesystem::path(processPath).filename().wstring(), L"winhttp_controller.exe");
+        const auto fileName = std::filesystem::path(processPath).filename().wstring();
+        return EqualsInsensitive(fileName, L"winhttp_controller.exe")
+            || EqualsInsensitive(fileName, L"winhttp_cli_controller.exe");
     }
 
     inline std::filesystem::path GetModulePath(HMODULE module)
@@ -143,6 +146,17 @@ namespace WinHttpRedirectProxy
 
         CloseHandle(pipeHandle);
         pipeHandle = INVALID_HANDLE_VALUE;
+    }
+
+    inline bool WaitForControllerStop(DWORD timeoutMs)
+    {
+        if (gControllerStopEvent == nullptr)
+        {
+            return gStopRequested.load();
+        }
+
+        const DWORD waitResult = WaitForSingleObject(gControllerStopEvent, timeoutMs);
+        return waitResult == WAIT_OBJECT_0 || gStopRequested.load();
     }
 
     inline bool SendControllerLog(HANDLE pipeHandle, const char* text)
@@ -218,7 +232,10 @@ namespace WinHttpRedirectProxy
                     lastWaitLogTick = now;
                 }
 
-                Sleep(1000);
+                if (WaitForControllerStop(1000))
+                {
+                    break;
+                }
                 continue;
             }
 
@@ -245,7 +262,10 @@ namespace WinHttpRedirectProxy
 
             AppendRuntimeLog("Controller disconnected");
             CloseClientPipe(pipeHandle);
-            Sleep(1000);
+            if (WaitForControllerStop(1000))
+            {
+                break;
+            }
         }
 
         AppendRuntimeLog("Controller thread exiting");
@@ -265,9 +285,23 @@ namespace WinHttpRedirectProxy
             gRuntimeLogPath = modulePath.parent_path() / WINHTTP_REDIRECT_PROXY_LOG_FILE_NAME;
             AppendRuntimeLog("DllMain attach");
 
+            if (gControllerStopEvent == nullptr)
+            {
+                gControllerStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+                if (gControllerStopEvent == nullptr)
+                {
+                    AppendRuntimeLog("CreateEventW failed for controller stop event, error = " + std::to_string(GetLastError()));
+                    return TRUE;
+                }
+            }
+            else
+            {
+                ResetEvent(gControllerStopEvent);
+            }
+
             if (ShouldSkipControllerRuntime())
             {
-                AppendRuntimeLog("Skipping controller IPC runtime inside winhttp_controller.exe");
+                AppendRuntimeLog("Skipping controller IPC runtime inside controller process");
                 return TRUE;
             }
 
@@ -285,6 +319,10 @@ namespace WinHttpRedirectProxy
         else if (reason == DLL_PROCESS_DETACH)
         {
             gStopRequested = true;
+            if (gControllerStopEvent != nullptr)
+            {
+                SetEvent(gControllerStopEvent);
+            }
             StopMemoryIpcRuntime();
         }
 

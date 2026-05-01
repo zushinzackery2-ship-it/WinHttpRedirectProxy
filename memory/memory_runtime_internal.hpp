@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "winhttp_memory_ipc.hpp"
+#include "../common/ipc_memory.hpp"
 
 namespace WinHttpRedirectProxy::MemoryRuntime
 {

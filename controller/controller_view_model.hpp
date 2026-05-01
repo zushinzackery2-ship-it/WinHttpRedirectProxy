@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "winhttp_controller_state.hpp"
+#include "controller_state.hpp"
 
 namespace WinHttpRedirectController
 {

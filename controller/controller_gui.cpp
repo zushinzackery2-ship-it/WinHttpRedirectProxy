@@ -1,6 +1,7 @@
 #include "pch.h"
-#include "winhttp_controller_gui.hpp"
-#include "winhttp_controller_window.hpp"
+#include "controller_gui.hpp"
+#include "controller_window.hpp"
+#include "controller_session.hpp"
 
 namespace WinHttpRedirectController
 {

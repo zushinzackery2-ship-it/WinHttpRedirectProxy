@@ -1,7 +1,7 @@
 #include "pch.h"
-#include "winhttp_controller_view_model.hpp"
+#include "controller_view_model.hpp"
 
-#include "winhttp_controller_pipe_discovery.hpp"
+#include "controller_pipe_discovery.hpp"
 
 namespace WinHttpRedirectController
 {

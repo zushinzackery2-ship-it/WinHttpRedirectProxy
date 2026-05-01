@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "winhttp_redirect_runtime.hpp"
-#include "winhttp_memory_runtime_internal.hpp"
+#include "../proxy/redirect_runtime.hpp"
+#include "memory_runtime_internal.hpp"
 
 #include <limits>
 

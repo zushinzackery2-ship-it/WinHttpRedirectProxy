@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "winhttp_ipc.hpp"
+#include "../common/ipc_control.hpp"
 
 namespace
 {
@@ -19,7 +19,7 @@ namespace
         wchar_t* end = nullptr;
         errno = 0;
         const unsigned long value = wcstoul(text, &end, 0);
-        if (errno != 0 || end == text || (end != nullptr && *end != L'\0') || value == 0 || value > MAXDWORD)
+        if (errno != 0 || end == text || (end != nullptr && *end != L'\0') || value == 0)
         {
             return false;
         }

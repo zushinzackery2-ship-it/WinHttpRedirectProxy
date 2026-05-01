@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "winhttp_ipc.hpp"
+#include "../common/ipc_control.hpp"
 
 namespace WinHttpRedirectController
 {
@@ -19,6 +19,11 @@ namespace WinHttpRedirectController
     {
         ~AgentSession()
         {
+            if (pipeHandle != nullptr && pipeHandle != INVALID_HANDLE_VALUE)
+            {
+                CloseHandle(pipeHandle);
+                pipeHandle = INVALID_HANDLE_VALUE;
+            }
             if (activityEvent != nullptr)
             {
                 CloseHandle(activityEvent);
@@ -47,12 +52,22 @@ namespace WinHttpRedirectController
                 CloseHandle(stopEvent);
                 stopEvent = nullptr;
             }
+            for (auto handle : sessionThreads)
+            {
+                if (handle != nullptr)
+                {
+                    CloseHandle(handle);
+                }
+            }
+            sessionThreads.clear();
         }
 
         std::atomic<bool> stopRequested = false;
         HANDLE stopEvent = nullptr;
         std::mutex sessionsMutex;
         std::vector<std::shared_ptr<AgentSession>> sessions;
+        std::mutex sessionThreadsMutex;
+        std::vector<HANDLE> sessionThreads;
         std::mutex logMutex;
         std::vector<std::wstring> logLines;
         std::atomic<std::uint64_t> sessionsRevision = 1;
@@ -81,10 +96,4 @@ namespace WinHttpRedirectController
     bool TrySelectDllPath(HWND ownerWindow, ControllerState& state, std::wstring& selectedPath);
     bool QueueLoadDllRequest(const std::shared_ptr<AgentSession>& session, const std::wstring& dllPath);
     bool SendLoadDllRequest(const std::shared_ptr<AgentSession>& session, const std::wstring& dllPath);
-    void HandleSessionMessage(
-        ControllerState& state,
-        const std::shared_ptr<AgentSession>& session,
-        const std::vector<std::uint8_t>& buffer);
-    DWORD WINAPI SessionThreadProc(void* parameter);
-    DWORD WINAPI AcceptThreadProc(void* parameter);
 }

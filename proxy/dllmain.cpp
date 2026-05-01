@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "winhttp_redirect_proxy.hpp"
+#include "redirect_proxy.hpp"
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 {

@@ -4,14 +4,20 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
-#include "winhttp_controller_view_model.hpp"
+#include "controller_view_model.hpp"
 
 namespace WinHttpRedirectController
 {
     inline constexpr wchar_t kControllerWindowTitle[] = L"WinHttpRedirectProxy Controller";
     inline constexpr wchar_t kControllerWindowSubtitle[] = L"Named Pipe GUI Controller";
+
+    inline constexpr int kSessionListViewId = 1001;
+    inline constexpr int kDllPathEditId = 1002;
+    inline constexpr int kBrowseButtonId = 1003;
+    inline constexpr int kLoadButtonId = 1004;
 
     struct ControllerWindowState
     {

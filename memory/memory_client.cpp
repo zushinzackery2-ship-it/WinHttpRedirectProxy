@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "winhttp_memory_ipc.hpp"
+#include "../common/ipc_memory.hpp"
 
 #include <cwctype>
 #include <string>

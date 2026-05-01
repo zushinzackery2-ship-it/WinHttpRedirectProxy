@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "winhttp_controller_pipe_discovery.hpp"
+#include "controller_pipe_discovery.hpp"
 
 namespace WinHttpRedirectController
 {
@@ -24,7 +24,7 @@ namespace WinHttpRedirectController
             wchar_t* end = nullptr;
             errno = 0;
             const unsigned long value = wcstoul(numberText, &end, 10);
-            if (errno != 0 || end == numberText || (end != nullptr && *end != L'\0') || value == 0 || value > MAXDWORD)
+            if (errno != 0 || end == numberText || (end != nullptr && *end != L'\0') || value == 0)
             {
                 return false;
             }

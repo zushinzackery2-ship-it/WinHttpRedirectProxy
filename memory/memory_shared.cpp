@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "winhttp_redirect_runtime.hpp"
-#include "winhttp_memory_runtime_internal.hpp"
+#include "../proxy/redirect_runtime.hpp"
+#include "memory_runtime_internal.hpp"
 
 #include <limits>
 
@@ -124,12 +124,17 @@ namespace WinHttpRedirectProxy::MemoryRuntime
             SharedMemorySession& session,
             WinHttpRedirectMemoryIpc::SharedMemoryConnectReplyPayload& reply)
         {
+            auto safeRequest = request;
+            safeRequest.mappingName[WINHTTP_REDIRECT_PROXY_SHARED_NAME_CHARS - 1] = L'\0';
+            safeRequest.requestEventName[WINHTTP_REDIRECT_PROXY_SHARED_NAME_CHARS - 1] = L'\0';
+            safeRequest.replyEventName[WINHTTP_REDIRECT_PROXY_SHARED_NAME_CHARS - 1] = L'\0';
+
             session = {};
             reply = {};
-            reply.requestId = request.requestId;
-            reply.sessionId = request.sessionId;
+            reply.requestId = safeRequest.requestId;
+            reply.sessionId = safeRequest.sessionId;
             reply.maxTransferSize = (std::min)(
-                request.maxTransferSize,
+                safeRequest.maxTransferSize,
                 static_cast<std::uint32_t>(WINHTTP_REDIRECT_PROXY_SHARED_MEMORY_BYTES));
 
             if (reply.maxTransferSize == 0)
@@ -139,7 +144,7 @@ namespace WinHttpRedirectProxy::MemoryRuntime
                 return false;
             }
 
-            session.MappingHandle = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, request.mappingName);
+            session.MappingHandle = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, safeRequest.mappingName);
             if (session.MappingHandle == nullptr)
             {
                 reply.status = static_cast<std::uint32_t>(WinHttpRedirectMemoryIpc::OperationStatus::QueryFailed);
@@ -157,7 +162,7 @@ namespace WinHttpRedirectProxy::MemoryRuntime
                 return false;
             }
 
-            session.RequestEvent = OpenEventW(SYNCHRONIZE, FALSE, request.requestEventName);
+            session.RequestEvent = OpenEventW(SYNCHRONIZE, FALSE, safeRequest.requestEventName);
             if (session.RequestEvent == nullptr)
             {
                 reply.status = static_cast<std::uint32_t>(WinHttpRedirectMemoryIpc::OperationStatus::QueryFailed);
@@ -166,7 +171,7 @@ namespace WinHttpRedirectProxy::MemoryRuntime
                 return false;
             }
 
-            session.ReplyEvent = OpenEventW(EVENT_MODIFY_STATE, FALSE, request.replyEventName);
+            session.ReplyEvent = OpenEventW(EVENT_MODIFY_STATE, FALSE, safeRequest.replyEventName);
             if (session.ReplyEvent == nullptr)
             {
                 reply.status = static_cast<std::uint32_t>(WinHttpRedirectMemoryIpc::OperationStatus::QueryFailed);

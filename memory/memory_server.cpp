@@ -1,7 +1,7 @@
 #include "pch.h"
-#include "winhttp_redirect_runtime.hpp"
-#include "winhttp_memory_runtime.hpp"
-#include "winhttp_memory_runtime_internal.hpp"
+#include "../proxy/redirect_runtime.hpp"
+#include "memory_runtime.hpp"
+#include "memory_runtime_internal.hpp"
 
 namespace WinHttpRedirectProxy
 {
@@ -117,6 +117,7 @@ namespace WinHttpRedirectProxy
         }
         if (gMemoryRuntimeThread != nullptr)
         {
+            WaitForSingleObject(gMemoryRuntimeThread, 5000);
             CloseHandle(gMemoryRuntimeThread);
             gMemoryRuntimeThread = nullptr;
         }

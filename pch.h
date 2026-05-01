@@ -14,7 +14,6 @@
 #include <uxtheme.h>
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>

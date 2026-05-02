@@ -26,6 +26,8 @@
 namespace WinHttpRedirectProxyIpc
 {
     inline constexpr std::uint32_t kMagic = 0x58525057;
+    inline constexpr std::uint32_t kProtocolVersion = 1;
+    inline constexpr std::uint32_t kFeatureBootstrapAfterLoad = 0x1;
 
     enum class MessageKind : std::uint32_t
     {
@@ -47,6 +49,10 @@ namespace WinHttpRedirectProxyIpc
     struct AgentHelloPayload
     {
         wchar_t processPath[WINHTTP_REDIRECT_PROXY_MAX_PATH_CHARS];
+#ifdef WINHTTP_REDIRECT_PROXY_ENABLE_PROTOCOL_VERSION
+        std::uint32_t protocolVersion;
+        std::uint32_t featureFlags;
+#endif
     };
 
     struct AgentLogPayload
@@ -118,6 +124,10 @@ namespace WinHttpRedirectProxyIpc
     {
         AgentHelloPayload payload = {};
         CopyWideText(payload.processPath, processPath);
+#ifdef WINHTTP_REDIRECT_PROXY_ENABLE_PROTOCOL_VERSION
+        payload.protocolVersion = kProtocolVersion;
+        payload.featureFlags = kFeatureBootstrapAfterLoad;
+#endif
         return WriteMessage(
             pipeHandle,
             MessageKind::AgentHello,

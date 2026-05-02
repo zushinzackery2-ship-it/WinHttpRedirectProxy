@@ -190,6 +190,28 @@ namespace WinHttpRedirectProxy
             return true;
         }
 
+#ifdef WINHTTP_REDIRECT_PROXY_ENABLE_BOOTSTRAP
+        {
+            using BootstrapFn = BOOL(WINAPI*)();
+            auto bootstrap = reinterpret_cast<BootstrapFn>(GetProcAddress(dllHandle, "vdtrace_loader_bootstrap"));
+            if (bootstrap != nullptr && !bootstrap())
+            {
+                const auto error = GetLastError();
+                AppendRuntimeLog("vdtrace_loader_bootstrap failed, error = " + std::to_string(error));
+                FreeLibrary(dllHandle);
+                WinHttpRedirectProxyIpc::SendLoadDllReply(
+                    pipeHandle,
+                    GetCurrentProcessId(),
+                    1,
+                    error,
+                    dllPath,
+                    L"bootstrap failed");
+                return true;
+            }
+            AppendRuntimeLog("Bootstrap completed");
+        }
+#endif
+
         AppendRuntimeLog("Loaded DLL from " + Narrow(dllPath));
         WinHttpRedirectProxyIpc::SendLoadDllReply(
             pipeHandle,
@@ -287,11 +309,26 @@ namespace WinHttpRedirectProxy
                 ResetEvent(gControllerStopEvent);
             }
 
+#ifdef WINHTTP_REDIRECT_PROXY_WHITELIST_PROCESS
+            {
+                const auto processPath = GetProcessPath();
+                if (!processPath.empty())
+                {
+                    const auto fileName = std::filesystem::path(processPath).filename().wstring();
+                    if (!EqualsInsensitive(fileName, WINHTTP_REDIRECT_PROXY_WHITELIST_PROCESS))
+                    {
+                        AppendRuntimeLog("Skipping: process not in whitelist");
+                        return TRUE;
+                    }
+                }
+            }
+#else
             if (ShouldSkipControllerRuntime())
             {
                 AppendRuntimeLog("Skipping controller IPC runtime inside controller process");
                 return TRUE;
             }
+#endif
 
             StartMemoryIpcRuntime();
 

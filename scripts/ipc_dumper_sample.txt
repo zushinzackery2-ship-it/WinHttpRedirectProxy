@@ -1,0 +1,29 @@
+
+============================================================
+Struct: Temp_bool_Variable (0x7FF4DDC70070, CI=523)
+  ChildProperties: 0x7FF4DE181CA8
+  Size: 0x28
+  Fields (3):
+    [ 0] 0x7FF4DE181CA8  name='CoreUObject.Object.ExecuteUbergraph' (CI=10745)  class=0x29F900000041
+    [ 1] 0x7FF4DDC70070  name='Temp_bool_Variable' (CI=1)  class=0x100000043
+    [ 2] 0x7FF4DE16CCE8  name='unk_0' (CI=0)  class=0x1
+
+============================================================
+Struct: CallFunc_GetLayOutState_ReturnValue_1 (0x7FF4DDC720B0, CI=531)
+  ChildProperties: 0x7FF4DE2214B8
+  SuperStruct: 0x7FF4DDC70070
+  Size: 0x2C8
+  Fields (3):
+    [ 0] 0x7FF4DE2214B8  name='Engine.Actor.WasRecentlyRenderedOnScreen' (CI=14760)  class=0x39A800000041
+    [ 1] 0x7FF4DDC720B0  name='CallFunc_GetLayOutState_ReturnValue_1' (CI=11)  class=0xB00000043
+    [ 2] 0x7FF4DE16CD38  name='Temp_byte_Variable' (CI=2)  class=0x200000001
+
+============================================================
+Struct: Lifetime (0x7FF4DDC71EB0, CI=67801)
+  ChildProperties: 0x7FF4DE6CD588
+  SuperStruct: 0x7FF4DDC720B0
+  Size: 0x3B8
+  Fields (3):
+    [ 0] 0x7FF4DE6CD588  name='Engine.HUD.ShowHUD' (CI=35751)  class=0x8BA700000041
+    [ 1] 0x7FF4DDC71EB0  name='Lifetime' (CI=12)  class=0xC00000043
+    [ 2] 0x7FF4DE16CD38  name='Temp_byte_Variable' (CI=2)  class=0x200000001

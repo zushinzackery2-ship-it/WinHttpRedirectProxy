@@ -1,0 +1,362 @@
+#include "pch.h"
+#include "redirect_runtime.hpp"
+
+#include <fstream>
+#include <mutex>
+
+namespace WinHttpRedirectProxy
+{
+    std::string Narrow(const std::wstring& text)
+    {
+        if (text.empty())
+        {
+            return {};
+        }
+
+        const auto count = WideCharToMultiByte(
+            CP_UTF8,
+            0,
+            text.c_str(),
+            -1,
+            nullptr,
+            0,
+            nullptr,
+            nullptr);
+        if (count <= 1)
+        {
+            return {};
+        }
+
+        std::string result(static_cast<std::size_t>(count - 1), '\0');
+        WideCharToMultiByte(
+            CP_UTF8,
+            0,
+            text.c_str(),
+            -1,
+            result.data(),
+            count - 1,
+            nullptr,
+            nullptr);
+        return result;
+    }
+
+    std::wstring GetProcessPath()
+    {
+        std::wstring buffer(MAX_PATH, L'\0');
+        for (;;)
+        {
+            const auto length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+            if (length == 0)
+            {
+                return {};
+            }
+            if (length < buffer.size())
+            {
+                buffer.resize(length);
+                return buffer;
+            }
+            if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+            {
+                return {};
+            }
+            buffer.resize(buffer.size() * 2);
+        }
+    }
+
+    bool EqualsInsensitive(std::wstring_view left, std::wstring_view right)
+    {
+        if (left.size() != right.size())
+        {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < left.size(); ++index)
+        {
+            if (::towlower(left[index]) != ::towlower(right[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool ShouldSkipControllerRuntime()
+    {
+        const auto processPath = GetProcessPath();
+        if (processPath.empty())
+        {
+            return false;
+        }
+
+        const auto fileName = std::filesystem::path(processPath).filename().wstring();
+        return EqualsInsensitive(fileName, L"winhttp_controller.exe")
+            || EqualsInsensitive(fileName, L"winhttp_cli_controller.exe");
+    }
+
+    std::filesystem::path GetModulePath(HMODULE module)
+    {
+        std::wstring buffer(MAX_PATH, L'\0');
+        const auto length = GetModuleFileNameW(module, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (length == 0)
+        {
+            return {};
+        }
+
+        buffer.resize(length);
+        return std::filesystem::path(buffer);
+    }
+
+    void AppendRuntimeLog(const std::string& line)
+    {
+        std::lock_guard<std::mutex> lock(gRuntimeLogMutex);
+        if (gRuntimeLogPath.empty())
+        {
+            return;
+        }
+
+        std::ofstream out(gRuntimeLogPath, std::ios::app | std::ios::binary);
+        if (!out)
+        {
+            return;
+        }
+
+        out << WINHTTP_REDIRECT_PROXY_LOG_PREFIX << line << "\n";
+    }
+
+    void CloseClientPipe(HANDLE& pipeHandle)
+    {
+        if (pipeHandle == nullptr || pipeHandle == INVALID_HANDLE_VALUE)
+        {
+            pipeHandle = INVALID_HANDLE_VALUE;
+            return;
+        }
+
+        CloseHandle(pipeHandle);
+        pipeHandle = INVALID_HANDLE_VALUE;
+    }
+
+    bool WaitForControllerStop(DWORD timeoutMs)
+    {
+        if (gControllerStopEvent == nullptr)
+        {
+            return gStopRequested.load();
+        }
+
+        const DWORD waitResult = WaitForSingleObject(gControllerStopEvent, timeoutMs);
+        return waitResult == WAIT_OBJECT_0 || gStopRequested.load();
+    }
+
+    bool SendControllerLog(HANDLE pipeHandle, const char* text)
+    {
+        return WinHttpRedirectProxyIpc::SendAgentLog(pipeHandle, GetCurrentProcessId(), text);
+    }
+
+    bool HandleLoadDllRequest(HANDLE pipeHandle, const std::vector<std::uint8_t>& buffer)
+    {
+        if (buffer.size() < sizeof(WinHttpRedirectProxyIpc::MessageHeader) + sizeof(WinHttpRedirectProxyIpc::LoadDllRequestPayload))
+        {
+            return true;
+        }
+
+        const auto* payload = reinterpret_cast<const WinHttpRedirectProxyIpc::LoadDllRequestPayload*>(
+            buffer.data() + sizeof(WinHttpRedirectProxyIpc::MessageHeader));
+        const std::wstring dllPath(payload->dllPath);
+        AppendRuntimeLog("Controller requested DLL = " + Narrow(dllPath));
+        if (dllPath.empty())
+        {
+            WinHttpRedirectProxyIpc::SendLoadDllReply(
+                pipeHandle,
+                GetCurrentProcessId(),
+                1,
+                ERROR_INVALID_PARAMETER,
+                dllPath,
+                L"dll path is empty");
+            return true;
+        }
+
+        const auto dllHandle = LoadLibraryW(dllPath.c_str());
+        if (dllHandle == nullptr)
+        {
+            const auto error = GetLastError();
+            AppendRuntimeLog("LoadLibraryW(selected DLL) failed, error = " + std::to_string(error));
+            WinHttpRedirectProxyIpc::SendLoadDllReply(
+                pipeHandle,
+                GetCurrentProcessId(),
+                1,
+                error,
+                dllPath,
+                L"LoadLibraryW failed");
+            return true;
+        }
+
+#ifdef WINHTTP_REDIRECT_PROXY_ENABLE_BOOTSTRAP
+        {
+            using BootstrapFn = BOOL(WINAPI*)();
+            auto bootstrap = reinterpret_cast<BootstrapFn>(GetProcAddress(dllHandle, "vdtrace_loader_bootstrap"));
+            if (bootstrap != nullptr && !bootstrap())
+            {
+                const auto error = GetLastError();
+                AppendRuntimeLog("vdtrace_loader_bootstrap failed, error = " + std::to_string(error));
+                FreeLibrary(dllHandle);
+                WinHttpRedirectProxyIpc::SendLoadDllReply(
+                    pipeHandle,
+                    GetCurrentProcessId(),
+                    1,
+                    error,
+                    dllPath,
+                    L"bootstrap failed");
+                return true;
+            }
+            AppendRuntimeLog("Bootstrap completed");
+        }
+#endif
+
+        AppendRuntimeLog("Loaded DLL from " + Narrow(dllPath));
+        WinHttpRedirectProxyIpc::SendLoadDllReply(
+            pipeHandle,
+            GetCurrentProcessId(),
+            0,
+            0,
+            dllPath,
+            L"ok");
+        return true;
+    }
+
+    DWORD WINAPI ControllerThread(void*)
+    {
+        AppendRuntimeLog("Controller thread entered");
+        AppendRuntimeLog("PID = " + std::to_string(GetCurrentProcessId()));
+        AppendRuntimeLog("Process = " + Narrow(GetProcessPath()));
+
+        DWORD lastWaitLogTick = 0;
+        while (!gStopRequested.load())
+        {
+            HANDLE pipeHandle = WinHttpRedirectProxyIpc::ConnectToPipe(500);
+            if (pipeHandle == INVALID_HANDLE_VALUE)
+            {
+                const auto now = GetTickCount();
+                if (lastWaitLogTick == 0 || now - lastWaitLogTick >= 5000)
+                {
+                    AppendRuntimeLog("Waiting for controller pipe");
+                    lastWaitLogTick = now;
+                }
+
+                if (WaitForControllerStop(1000))
+                {
+                    break;
+                }
+                continue;
+            }
+
+            lastWaitLogTick = 0;
+            AppendRuntimeLog("Controller connected");
+            WinHttpRedirectProxyIpc::SendAgentHello(pipeHandle, GetCurrentProcessId(), GetProcessPath());
+            SendControllerLog(pipeHandle, "agent connected");
+
+            std::vector<std::uint8_t> buffer;
+            while (!gStopRequested.load() && WinHttpRedirectProxyIpc::ReadMessage(pipeHandle, buffer))
+            {
+                if (buffer.size() < sizeof(WinHttpRedirectProxyIpc::MessageHeader))
+                {
+                    continue;
+                }
+
+                const auto* header = reinterpret_cast<const WinHttpRedirectProxyIpc::MessageHeader*>(buffer.data());
+                const auto kind = static_cast<WinHttpRedirectProxyIpc::MessageKind>(header->kind);
+                if (kind == WinHttpRedirectProxyIpc::MessageKind::LoadDllRequest)
+                {
+                    HandleLoadDllRequest(pipeHandle, buffer);
+                }
+            }
+
+            AppendRuntimeLog("Controller disconnected");
+            CloseClientPipe(pipeHandle);
+            if (WaitForControllerStop(1000))
+            {
+                break;
+            }
+        }
+
+        AppendRuntimeLog("Controller thread exiting");
+        return 0;
+    }
+
+    BOOL HandleDllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
+    {
+        (void)reserved;
+
+        if (reason == DLL_PROCESS_ATTACH)
+        {
+            DisableThreadLibraryCalls(instance);
+            gStopRequested = false;
+
+            const auto modulePath = GetModulePath(instance);
+            gRuntimeLogPath = modulePath.parent_path() / WINHTTP_REDIRECT_PROXY_LOG_FILE_NAME;
+            AppendRuntimeLog("DllMain attach");
+
+            if (gControllerStopEvent == nullptr)
+            {
+                gControllerStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+                if (gControllerStopEvent == nullptr)
+                {
+                    AppendRuntimeLog("CreateEventW failed for controller stop event, error = " + std::to_string(GetLastError()));
+                    return TRUE;
+                }
+            }
+            else
+            {
+                ResetEvent(gControllerStopEvent);
+            }
+
+#ifdef WINHTTP_REDIRECT_PROXY_WHITELIST_PROCESS
+            {
+                const auto processPath = GetProcessPath();
+                if (!processPath.empty())
+                {
+                    const auto fileName = std::filesystem::path(processPath).filename().wstring();
+                    if (!EqualsInsensitive(fileName, WINHTTP_REDIRECT_PROXY_WHITELIST_PROCESS))
+                    {
+                        AppendRuntimeLog("Skipping: process not in whitelist");
+                        return TRUE;
+                    }
+                }
+            }
+#else
+            if (ShouldSkipControllerRuntime())
+            {
+                AppendRuntimeLog("Skipping controller IPC runtime inside controller process");
+                return TRUE;
+            }
+#endif
+
+            StartMemoryIpcRuntime();
+
+            const auto thread = CreateThread(nullptr, 0, &ControllerThread, nullptr, 0, nullptr);
+            if (thread == nullptr)
+            {
+                AppendRuntimeLog("CreateThread failed, error = " + std::to_string(GetLastError()));
+                return TRUE;
+            }
+
+            gControllerThread = thread;
+        }
+        else if (reason == DLL_PROCESS_DETACH)
+        {
+            gStopRequested = true;
+            if (gControllerStopEvent != nullptr)
+            {
+                SetEvent(gControllerStopEvent);
+            }
+            if (gControllerThread != nullptr)
+            {
+                WaitForSingleObject(gControllerThread, 5000);
+                CloseHandle(gControllerThread);
+                gControllerThread = nullptr;
+            }
+            StopMemoryIpcRuntime();
+        }
+
+        return TRUE;
+    }
+}
